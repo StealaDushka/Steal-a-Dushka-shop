@@ -32,39 +32,12 @@
             if (snapshot.exists()) return snapshot.val();
             return null;
         };
-
-        // Обновление Dushka Coins (поле dushka)
-        window.updateDushka = async function (nickname, amount) {
-            const userRef = ref(db, 'users/' + nickname);
-            const snapshot = await get(userRef);
-            if (snapshot.exists()) {
-                const data = snapshot.val();
-                const newBalance = (data.dushka || 0) + amount;
-                if (newBalance < 0) return false;
-                await update(userRef, { dushka: newBalance });
-                return true;
-            }
+        
+        // Просто проверка существования аккаунта для входа
+        window.loginCheck = async function (nickname, password) {
+            const data = await readUserData(nickname);
+            if (data && data.password === password) return true;
             return false;
-        };
-
-        // Обновление обычных монет (поле coins) — для покупок за деньги
-        window.updateCoins = async function (nickname, amount) {
-            const userRef = ref(db, 'users/' + nickname);
-            const snapshot = await get(userRef);
-            if (snapshot.exists()) {
-                const data = snapshot.val();
-                const newBalance = (data.coins || 0) + amount;
-                if (newBalance < 0) return false;
-                await update(userRef, { coins: newBalance });
-                return true;
-            }
-            return false;
-        };
-
-        // Установка флагов (VIP, 2X Money и т.д.)
-        window.setFlag = async function (nickname, flag) {
-            const userRef = ref(db, 'users/' + nickname);
-            await update(userRef, { [flag]: true });
         };
     </script>
 
@@ -140,33 +113,62 @@
             cursor: pointer;
         }
 
-        .shop-items { display: none; width: 350px; }
+        /* ТОЛЬКО ПОПОЛНЕНИЕ */
+        .recharge-section { 
+            display: none; 
+            width: 350px; 
+            text-align: center; 
+        }
 
-        .card {
+        .recharge-box {
             background-color: #2c2f36;
             border: 2px solid #444;
             border-radius: 10px;
-            padding: 15px;
+            padding: 20px;
             margin-bottom: 15px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
         }
 
-        .card .info { flex: 1; }
-        .card .info .name { font-size: 18px; font-weight: bold; margin-bottom: 5px; }
-        .card .info .desc { font-size: 12px; color: #aaa; }
-        .card .price {
-            background-color: #4caf50;
-            padding: 10px 15px;
+        .info-text { color: #aaa; font-size: 14px; margin-bottom: 10px; }
+        .input-group { margin-bottom: 15px; }
+        
+        .input-group input {
+            width: 100%;
+            height: 45px;
+            border: none;
             border-radius: 8px;
-            cursor: pointer;
-            font-size: 14px;
+            padding: 0 15px;
+            font-size: 18px;
+            color: black;
             font-weight: bold;
             text-align: center;
         }
 
-        .card .price:active { transform: scale(0.95); }
+        .stars-result { font-size: 18px; font-weight: bold; color: #ffd700; margin: 10px 0; }
+        .action-btn {
+            background-color: #4caf50;
+            border: none;
+            border-radius: 8px;
+            color: white;
+            font-size: 16px;
+            font-weight: bold;
+            padding: 12px;
+            width: 100%;
+            cursor: pointer;
+        }
+        
+        .action-btn:active { transform: scale(0.95); }
+        
+        #transaction-status {
+            display: none;
+            background: #333;
+            padding: 15px;
+            border-radius: 8px;
+            color: #ffd700;
+            font-weight: bold;
+            font-size: 14px;
+            line-height: 1.5;
+            margin-top: 15px;
+        }
 
         .admin-badge {
             display: none;
@@ -176,58 +178,12 @@
             text-align: center;
             margin-bottom: 10px;
         }
-
-        #recharge-modal {
-            display: none;
-            position: fixed;
-            top: 0; left: 0;
-            width: 100vw; height: 100vh;
-            background: rgba(0,0,0,0.8);
-            justify-content: center;
-            align-items: center;
-            z-index: 1000;
-        }
-
-        #recharge-modal .modal-content {
-            background: #2c2f36;
-            padding: 20px;
-            border-radius: 12px;
-            border: 2px solid #444;
-            width: 300px;
-            text-align: center;
-        }
-
-        #recharge-modal input {
-            width: 100%;
-            height: 40px;
-            background: white;
-            border: none;
-            border-radius: 8px;
-            margin: 10px 0;
-            padding: 0 10px;
-            font-size: 16px;
-            font-weight: bold;
-            color: black;
-        }
-
-        #recharge-modal .actions { display: flex; gap: 10px; margin-top: 10px; }
-        #recharge-modal .btn {
-            flex: 1;
-            padding: 10px;
-            border: none;
-            border-radius: 8px;
-            font-size: 14px;
-            font-weight: bold;
-            cursor: pointer;
-        }
-        #recharge-modal .btn-confirm { background: #4caf50; color: white; }
-        #recharge-modal .btn-cancel { background: #555; color: white; }
     </style>
 </head>
 <body>
 
     <!-- БАЛАНС -->
-    <div id="balance-container" onclick="openRecharge()">💰 <span id="balance-amount">0</span></div>
+    <div id="balance-container">💰 <span id="balance-amount">0</span></div>
 
     <!-- ЗАГОЛОВОК -->
     <div class="header">💰 DUSHKA SHOP</div>
@@ -244,50 +200,26 @@
         <div class="admin-badge" id="admin-badge">✅ Ты Админ!</div>
     </div>
 
-    <!-- МАГАЗИН -->
-    <div class="shop-items" id="shop-items">
-        <div class="card">
-            <div class="info"><div class="name">VIP</div><div class="desc">Многие преимущества</div></div>
-            <div class="price" onclick="buyItem('VIP', 90, 'vip')">🪙 90</div>
-        </div>
-        <div class="card">
-            <div class="info"><div class="name">2X MONEY</div><div class="desc">Двойные деньги</div></div>
-            <div class="price" onclick="buyItem('2X MONEY', 50, '2x_money')">🪙 50</div>
-        </div>
-        <div class="card">
-            <div class="info"><div class="name">$51,000</div><div class="desc">Деньги</div></div>
-            <div class="price" onclick="buyItem('$51,000', 15, 'money', 51000)">🪙 15</div>
-        </div>
-        <div class="card">
-            <div class="info"><div class="name">$425,000</div><div class="desc">Деньги</div></div>
-            <div class="price" onclick="buyItem('$425,000', 95, 'money', 425000)">🪙 95</div>
-        </div>
-        <div class="card">
-            <div class="info"><div class="name">Mythic</div><div class="desc">Лаки-блок</div></div>
-            <div class="price" onclick="buyItem('Mythic', 44, 'mythic')">🪙 44</div>
-        </div>
-        <div class="card">
-            <div class="info"><div class="name">Brainrot God</div><div class="desc">Лаки-блок</div></div>
-            <div class="price" onclick="buyItem('Brainrot God', 100, 'brainrot_god')">🪙 100</div>
-        </div>
-    </div>
-
-    <!-- ОКНО ПОПОЛНЕНИЯ -->
-    <div id="recharge-modal">
-        <div class="modal-content">
-            <h3 style="margin: 0 0 10px;">Пополнить баланс</h3>
-            <input type="number" id="recharge-amount" placeholder="Сумма в RUB">
-            <div class="actions">
-                <button class="btn btn-cancel" onclick="closeRecharge()">Отмена</button>
-                <button class="btn btn-confirm" onclick="confirmRecharge()">Пополнить</button>
+    <!-- ТОЛЬКО ПОПОЛНЕНИЕ -->
+    <div class="recharge-section" id="recharge-section">
+        <div class="recharge-box">
+            <div class="info-text">Введите количество Dushka Coins</div>
+            <div class="input-group">
+                <input type="number" id="recharge-amount" placeholder="Например: 100">
+            </div>
+            <div class="stars-result">Нужно звёзд: <span id="stars-needed">0</span> ⭐</div>
+            <button class="action-btn" onclick="confirmRecharge()">ПОПОЛНИТЬ</button>
+            <div id="transaction-status">
+                ⏳ Транзакция в ожидании!<br>
+                Сверните приложение и проверьте чат с ботом для оплаты.
             </div>
         </div>
     </div>
 
     <script>
         // ==================== TELEGRAM WEBAPP ====================
-        const tgUser = Telegram.WebApp.initDataUnsafe.user;
-        let telegramNickname = tgUser ? tgUser.username : null;
+        const tg = Telegram.WebApp;
+        tg.ready();
 
         let currentNickname = null;
 
@@ -302,9 +234,13 @@
                 if (existingUser.password === password) {
                     currentNickname = nickname;
                     if (nickname === 'MrDushka') document.getElementById('admin-badge').style.display = 'block';
-                    document.getElementById('shop-items').style.display = 'block';
+                    
+                    // Показываем только пополнение
                     document.getElementById('auth-section').style.display = 'none';
-                    document.getElementById('balance-amount').textContent = existingUser.dushka || 0; // показываем dushka
+                    document.getElementById('recharge-section').style.display = 'block';
+                    
+                    // Баланс
+                    document.getElementById('balance-amount').textContent = existingUser.dushka || 0;
                     alert('Вход выполнен! С возвращением, ' + nickname + '!');
                 } else {
                     alert('Неверный ПАРОЛЬ!');
@@ -314,59 +250,40 @@
             }
         }
 
-        // ==================== ОКНО ПОПОЛНЕНИЯ ====================
-        function openRecharge() {
-            document.getElementById('recharge-modal').style.display = 'flex';
-        }
+        // ==================== РАСЧЕТ ЗВЕЗД ====================
+        const rechargeInput = document.getElementById('recharge-amount');
+        const starsNeededSpan = document.getElementById('stars-needed');
 
-        function closeRecharge() {
-            document.getElementById('recharge-modal').style.display = 'none';
-        }
+        rechargeInput.addEventListener('input', function() {
+            const dushka = parseInt(this.value) || 0;
+            // 1 звезда = 10 Dushka Coins
+            const stars = Math.ceil(dushka / 10);
+            starsNeededSpan.textContent = stars;
+        });
 
         // ==================== ПОДТВЕРЖДЕНИЕ ПОПОЛНЕНИЯ ====================
         async function confirmRecharge() {
             if (!currentNickname) { alert('Сначала войдите!'); return; }
 
-            const amountRub = parseInt(document.getElementById('recharge-amount').value);
-            if (!amountRub || amountRub <= 0) { alert('Введите корректную сумму!'); return; }
+            const dushkaCoins = parseInt(document.getElementById('recharge-amount').value);
+            if (!dushkaCoins || dushkaCoins <= 0) { alert('Введите корректное количество!'); return; }
 
-            // Курс: 1 RUB = 10 Dushka Coins (можешь поменять)
-            const dushkaToAdd = amountRub * 10;
-            const success = await updateDushka(currentNickname, dushkaToAdd);
+            // Расчет звезд
+            const starsNeeded = Math.ceil(dushkaCoins / 10);
 
-            if (success) {
-                const user = await readUserData(currentNickname);
-                document.getElementById('balance-amount').textContent = user.dushka || 0;
-                alert(`✅ Баланс пополнен на ${dushkaToAdd} Dushka Coins!`);
-                closeRecharge();
-            } else {
-                alert('⚠️ Не удалось пополнить баланс!');
-            }
-        }
+            // Показываем статус ожидания
+            document.getElementById('transaction-status').style.display = 'block';
 
-        // ==================== ПОКУПКА ЗА DUSHKA COINS ====================
-        async function buyItem(itemName, price, flag, moneyToAdd) {
-            if (!currentNickname) { alert('Сначала войдите!'); return; }
+            // Отправляем данные боту для формирования оплаты
+            // Бот получит эти данные и создаст запрос на оплату в Telegram Stars
+            tg.sendData(JSON.stringify({
+                type: 'donation',
+                nickname: currentNickname,
+                dushka: dushkaCoins,
+                stars: starsNeeded
+            }));
 
-            // Списание Dushka Coins
-            const success = await updateDushka(currentNickname, -price);
-
-            if (success) {
-                // Если покупка денег — начисляем обычные монеты
-                if (moneyToAdd) {
-                    await updateCoins(currentNickname, moneyToAdd);
-                }
-                // Если это флаг (VIP, 2X и т.д.) — сохраняем в Firebase
-                if (flag && flag !== 'money') {
-                    await setFlag(currentNickname, flag);
-                }
-
-                const user = await readUserData(currentNickname);
-                document.getElementById('balance-amount').textContent = user.dushka || 0;
-                alert(`✅ Ты купил ${itemName}! Остаток Dushka Coins: ${user.dushka}`);
-            } else {
-                alert(`❌ Недостаточно Dushka Coins! Нужно: ${price}`);
-            }
+            // Не закрываем приложение, чтобы пользователь видел инструкцию
         }
     </script>
 </body>
