@@ -6,7 +6,7 @@
     <title>Dushka Shop</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
 
-    <!-- ==================== FIREBASE ==================== -->
+    <!-- FIREBASE -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
         import { getDatabase, ref, get, update } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
@@ -25,6 +25,7 @@
         const app = initializeApp(firebaseConfig);
         const db = getDatabase(app);
 
+        // Чтение данных игрока
         window.readUserData = async function (nickname) {
             const userRef = ref(db, 'users/' + nickname);
             const snapshot = await get(userRef);
@@ -32,8 +33,22 @@
             return null;
         };
 
-        // Списание и пополнение баланса
-        window.updateBalance = async function (nickname, amount) {
+        // Обновление Dushka Coins (поле dushka)
+        window.updateDushka = async function (nickname, amount) {
+            const userRef = ref(db, 'users/' + nickname);
+            const snapshot = await get(userRef);
+            if (snapshot.exists()) {
+                const data = snapshot.val();
+                const newBalance = (data.dushka || 0) + amount;
+                if (newBalance < 0) return false;
+                await update(userRef, { dushka: newBalance });
+                return true;
+            }
+            return false;
+        };
+
+        // Обновление обычных монет (поле coins) — для покупок за деньги
+        window.updateCoins = async function (nickname, amount) {
             const userRef = ref(db, 'users/' + nickname);
             const snapshot = await get(userRef);
             if (snapshot.exists()) {
@@ -45,8 +60,13 @@
             }
             return false;
         };
+
+        // Установка флагов (VIP, 2X Money и т.д.)
+        window.setFlag = async function (nickname, flag) {
+            const userRef = ref(db, 'users/' + nickname);
+            await update(userRef, { [flag]: true });
+        };
     </script>
-    <!-- ==================== /FIREBASE ==================== -->
 
     <style>
         body {
@@ -157,7 +177,6 @@
             margin-bottom: 10px;
         }
 
-        /* Поп-ап окно для пополнения */
         #recharge-modal {
             display: none;
             position: fixed;
@@ -229,27 +248,27 @@
     <div class="shop-items" id="shop-items">
         <div class="card">
             <div class="info"><div class="name">VIP</div><div class="desc">Многие преимущества</div></div>
-            <div class="price" onclick="buyItem('VIP', 90)">🪙 90</div>
+            <div class="price" onclick="buyItem('VIP', 90, 'vip')">🪙 90</div>
         </div>
         <div class="card">
             <div class="info"><div class="name">2X MONEY</div><div class="desc">Двойные деньги</div></div>
-            <div class="price" onclick="buyItem('2X MONEY', 50)">🪙 50</div>
+            <div class="price" onclick="buyItem('2X MONEY', 50, '2x_money')">🪙 50</div>
         </div>
         <div class="card">
             <div class="info"><div class="name">$51,000</div><div class="desc">Деньги</div></div>
-            <div class="price" onclick="buyItem('$51,000', 15)">🪙 15</div>
+            <div class="price" onclick="buyItem('$51,000', 15, 'money', 51000)">🪙 15</div>
         </div>
         <div class="card">
             <div class="info"><div class="name">$425,000</div><div class="desc">Деньги</div></div>
-            <div class="price" onclick="buyItem('$425,000', 95)">🪙 95</div>
+            <div class="price" onclick="buyItem('$425,000', 95, 'money', 425000)">🪙 95</div>
         </div>
         <div class="card">
             <div class="info"><div class="name">Mythic</div><div class="desc">Лаки-блок</div></div>
-            <div class="price" onclick="buyItem('Mythic', 44)">🪙 44</div>
+            <div class="price" onclick="buyItem('Mythic', 44, 'mythic')">🪙 44</div>
         </div>
         <div class="card">
             <div class="info"><div class="name">Brainrot God</div><div class="desc">Лаки-блок</div></div>
-            <div class="price" onclick="buyItem('Brainrot God', 100)">🪙 100</div>
+            <div class="price" onclick="buyItem('Brainrot God', 100, 'brainrot_god')">🪙 100</div>
         </div>
     </div>
 
@@ -285,7 +304,7 @@
                     if (nickname === 'MrDushka') document.getElementById('admin-badge').style.display = 'block';
                     document.getElementById('shop-items').style.display = 'block';
                     document.getElementById('auth-section').style.display = 'none';
-                    document.getElementById('balance-amount').textContent = existingUser.coins || 0;
+                    document.getElementById('balance-amount').textContent = existingUser.dushka || 0; // показываем dushka
                     alert('Вход выполнен! С возвращением, ' + nickname + '!');
                 } else {
                     alert('Неверный ПАРОЛЬ!');
@@ -312,31 +331,41 @@
             if (!amountRub || amountRub <= 0) { alert('Введите корректную сумму!'); return; }
 
             // Курс: 1 RUB = 10 Dushka Coins (можешь поменять)
-            const coinsToAdd = amountRub * 10;
-            const success = await updateBalance(currentNickname, coinsToAdd);
+            const dushkaToAdd = amountRub * 10;
+            const success = await updateDushka(currentNickname, dushkaToAdd);
 
             if (success) {
                 const user = await readUserData(currentNickname);
-                document.getElementById('balance-amount').textContent = user.coins || 0;
-                alert(`✅ Баланс пополнен на ${coinsToAdd} Dushka Coins!`);
+                document.getElementById('balance-amount').textContent = user.dushka || 0;
+                alert(`✅ Баланс пополнен на ${dushkaToAdd} Dushka Coins!`);
                 closeRecharge();
             } else {
                 alert('⚠️ Не удалось пополнить баланс!');
             }
         }
 
-        // ==================== ПОКУПКА ЗА БАЛАНС ====================
-        async function buyItem(itemName, price) {
+        // ==================== ПОКУПКА ЗА DUSHKA COINS ====================
+        async function buyItem(itemName, price, flag, moneyToAdd) {
             if (!currentNickname) { alert('Сначала войдите!'); return; }
 
-            const success = await updateBalance(currentNickname, -price);
+            // Списание Dushka Coins
+            const success = await updateDushka(currentNickname, -price);
 
             if (success) {
+                // Если покупка денег — начисляем обычные монеты
+                if (moneyToAdd) {
+                    await updateCoins(currentNickname, moneyToAdd);
+                }
+                // Если это флаг (VIP, 2X и т.д.) — сохраняем в Firebase
+                if (flag && flag !== 'money') {
+                    await setFlag(currentNickname, flag);
+                }
+
                 const user = await readUserData(currentNickname);
-                document.getElementById('balance-amount').textContent = user.coins || 0;
-                alert(`✅ Ты купил ${itemName}! Остаток: ${user.coins} Coins.`);
+                document.getElementById('balance-amount').textContent = user.dushka || 0;
+                alert(`✅ Ты купил ${itemName}! Остаток Dushka Coins: ${user.dushka}`);
             } else {
-                alert(`❌ Недостаточно средств! Нужно: ${price} Coins.`);
+                alert(`❌ Недостаточно Dushka Coins! Нужно: ${price}`);
             }
         }
     </script>
